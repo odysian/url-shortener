@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from db_config import Base, engine
 from redis_config import test_redis_connection
 from routers import auth, redirect
 
@@ -20,8 +19,6 @@ async def lifespan(app: FastAPI):
         print("  Make sure Redis is running: sudo systemctl start redis")
     yield
 
-
-# Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="URL Shortener App",
