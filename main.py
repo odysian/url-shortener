@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from redis_config import test_redis_connection
-from routers import auth, redirect
+from routers import auth, links, redirect
 
 
 # Test Redis connection on startup
@@ -25,6 +25,7 @@ app = FastAPI(
     description="Fast, cached URL shortening service",
     version="1.0.0",
     lifespan=lifespan,
+    swagger_ui_parameters={"persistAuthorization": True},
 )
 
 # CORS configuration (allows frontend to call API)
@@ -37,6 +38,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(links.router)
 app.include_router(redirect.router)
 
 
