@@ -52,7 +52,11 @@ class LinkCreate(BaseModel):
 
     original_url: HttpUrl  # Validates URL format
     custom_code: Optional[str] = Field(None, min_length=3, max_length=10)
-    expires_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = Field(
+        default=None,
+        description="Optional expiration date. Leave empty for permanent link",
+        json_schema_extra={"example": "2026-12-15T00:00:00Z"},
+    )
 
 
 class LinkUpdate(BaseModel):

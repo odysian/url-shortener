@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 
 import redis
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -13,12 +13,23 @@ from redis_config import get_redis
 router = APIRouter(tags=["Redirect"])
 
 
-def record_click(link_id: int):
+def record_click(
+    link_id: int,
+    referrer: str | None = None,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+):
     """Record a click in the database"""
 
     db = SessionLocal()
     try:
-        click = db_models.Click(link_id=link_id, clicked_at=datetime.now(timezone.utc))
+        click = db_models.Click(
+            link_id=link_id,
+            clicked_at=datetime.now(timezone.utc),
+            referrer=referrer,
+            user_agent=user_agent,
+            ip_address=ip_address,
+        )
         db.add(click)
         db.commit()
     finally:
@@ -28,11 +39,16 @@ def record_click(link_id: int):
 @router.get("/{short_code}")
 async def redirect_to_url(
     short_code: str,
+    request: Request,
     background_tasks: BackgroundTasks,
     redis_client: redis.Redis = Depends(get_redis),
     db_session: Session = Depends(get_db),
 ):
     """Redirect short code to original URL"""
+
+    referrer = request.headers.get("referer")
+    user_agent = request.headers.get("user-agent")
+    ip_address = request.client.host if request.client else None
 
     cache_key = f"link:{short_code}"
     cache_data = redis_client.get(cache_key)
@@ -52,7 +68,9 @@ async def redirect_to_url(
                     status_code=status.HTTP_404_NOT_FOUND, detail="Link has expired"
                 )
 
-        background_tasks.add_task(record_click, link_id)
+        background_tasks.add_task(
+            record_click, link_id, referrer, user_agent, ip_address
+        )
 
         return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)  # type: ignore
 
@@ -80,6 +98,8 @@ async def redirect_to_url(
 
     redis_client.set(cache_key, json.dumps(new_cache_data))  # type: ignore
 
-    background_tasks.add_task(record_click, link.id)  # type: ignore
+    background_tasks.add_task(
+        record_click, link.id, referrer, user_agent, ip_address  # type: ignore
+    )
 
     return RedirectResponse(url=link.original_url, status_code=status.HTTP_302_FOUND)  # type: ignore
