@@ -21,6 +21,8 @@ async def lifespan(app: FastAPI):
     yield
 
 
+# Base.metadata.create_all(bind=engine)
+
 app = FastAPI(
     title="URL Shortener App",
     description="Fast, cached URL shortening service",
