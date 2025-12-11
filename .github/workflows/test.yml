@@ -59,6 +59,7 @@ jobs:
       # Step 4: Run tests
       - name: Run tests with pytest
         env:
+          DATABASE_URL: postgresql://urlshort_user:odysbase@localhost:5432/urlshortener_test
           TEST_DATABASE_URL: postgresql://urlshort_user:odysbase@localhost:5432/urlshortener_test
           SECRET_KEY: test-secret-key-for-ci-pipeline-only
           ALGORITHM: HS256

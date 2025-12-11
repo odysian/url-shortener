@@ -37,11 +37,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth.router)
-app.include_router(links.click_router)
-app.include_router(links.link_router)
-app.include_router(redirect.router)
-
 
 @app.get("/health")
 def health_check():
@@ -53,3 +48,9 @@ def health_check():
 def root():
     """Root endpoint with API info."""
     return {"message": "URL Shortener API", "docs": "/docs", "health": "/health"}
+
+
+app.include_router(auth.router)
+app.include_router(links.click_router)
+app.include_router(links.link_router)
+app.include_router(redirect.router)
