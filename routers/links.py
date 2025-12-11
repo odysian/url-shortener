@@ -49,7 +49,7 @@ def create_link(
         max_attempts = 3
         short_code = None
 
-        for i in range(max_attempts):
+        for _ in range(max_attempts):
             candidate = generate_short_code(6)
 
             existing = (
