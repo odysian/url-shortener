@@ -34,6 +34,8 @@ AWS_REGION=${aws_region}
 RATE_LIMIT_ENABLED=true
 TESTING=false
 ENVIRONMENT=production
+REDIS_HOST=${redis_endpoint}
+REDIS_PORT=6379
 EOF
 
 # Wait for RDS to be available (can take 5+ minutes after RDS resource created)
