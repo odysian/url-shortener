@@ -1,0 +1,161 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3  
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix={{branch}}-
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+      
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deploy to EC2
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          IMAGE_TAG: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          echo "$EC2_SSH_KEY" > ec2_key.pem
+          chmod 600 ec2_key.pem
+
+          # Pass environment variables to remote session
+          ssh -i ec2_key.pem \
+              -o StrictHostKeyChecking=no \
+              $EC2_USER@$EC2_HOST \
+              "IMAGE_TAG='$IMAGE_TAG' GHCR_PAT='$GHCR_PAT' GITHUB_ACTOR='$GITHUB_ACTOR' bash -s" << 'ENDSSH'
+            
+            set -e
+            
+            # Now all variables are available in the remote session
+            echo "=== Logging in to GitHub Container Registry ==="
+            echo "$GHCR_PAT" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+            
+            cd /home/ec2-user/url-shortener
+            
+            # Pull the pre-built image
+            echo "=== Pulling image: $IMAGE_TAG ==="
+            docker pull "$IMAGE_TAG"
+            
+            # Run database migrations
+            echo "=== Running migrations ==="
+            docker run --rm \
+              --env-file .env \
+              --entrypoint "" \
+              "$IMAGE_TAG" \
+              alembic upgrade head
+            
+            # Blue-Green Deployment
+            echo "=== Starting Blue-Green Deployment ==="
+            
+            # Start Green container on temporary port
+            docker run -d \
+              --name url-shortener-green \
+              -p 8001:8000 \
+              --env-file .env \
+              "$IMAGE_TAG"
+            
+            # Health check Green container
+            echo "=== Health checking Green container ==="
+            MAX_ATTEMPTS=30
+            ATTEMPT=0
+            GREEN_HEALTHY=false
+            
+            while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+                if curl -f http://localhost:8001/health > /dev/null 2>&1; then
+                    echo "Green container is healthy!"
+                    GREEN_HEALTHY=true
+                    break
+                fi
+                ATTEMPT=$((ATTEMPT + 1))
+                echo "Waiting for Green... ($ATTEMPT/$MAX_ATTEMPTS)"
+                sleep 1
+            done
+            
+            if [ "$GREEN_HEALTHY" = false ]; then
+                echo "Green container failed - rolling back"
+                docker logs url-shortener-green
+                docker stop url-shortener-green
+                docker rm url-shortener-green
+                exit 1
+            fi
+            
+            # Switch from Blue to Green
+            echo "=== Switching traffic from Blue to Green ==="
+            docker stop url-shortener || true
+            docker rm url-shortener || true
+            
+            docker stop url-shortener-green
+            docker rm url-shortener-green
+            
+            docker run -d \
+              --name url-shortener \
+              -p 8000:8000 \
+              --restart unless-stopped \
+              --env-file .env \
+              "$IMAGE_TAG"
+            
+            # Final health check
+            echo "=== Final health check on production port ==="
+            sleep 5
+            curl -f http://localhost:8000/health || exit 1
+            
+            echo "=== Deployment complete ==="
+            docker ps | grep url-shortener
+            
+            # Cleanup old images
+            docker image prune -f
+          ENDSSH
+          
+          rm -f ec2_key.pem
