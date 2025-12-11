@@ -38,7 +38,8 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
-app.include_router(links.router)
+app.include_router(links.click_router)
+app.include_router(links.link_router)
 app.include_router(redirect.router)
 
 
