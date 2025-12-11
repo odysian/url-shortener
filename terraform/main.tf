@@ -44,3 +44,12 @@ data "aws_ami" "amazon_linux_2023" {
   }
 }
 
+terraform {
+  backend "s3" {
+    bucket         = "odys-terraform-state-2025"
+    key            = "url-shortener/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "terraform-state-locks"
+    encrypt        = true
+  }
+}
