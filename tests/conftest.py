@@ -97,6 +97,12 @@ def override_redis():
     yield
 
 
+@pytest.fixture(scope="function")
+def test_redis():
+    """Provides the test Redis client to tests that need direct Redis access"""
+    return test_redis_client
+
+
 # AUTHENTICATION FIXTURES
 @pytest.fixture(scope="function")
 def test_user(client):
